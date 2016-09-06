@@ -1935,23 +1935,24 @@ define("tinymce/Editor", [
 
 			// Use callback instead
 			if (settings.urlconverter_callback) {
-				return self.execCallback('urlconverter_callback', url, elm, true, name);
+				return self.execCallback('urlconverter_callback', url, elm, true, name).replace(/([^:])\/\//, '$1/');
 			}
 
 			// Don't convert link href since thats the CSS files that gets loaded into the editor also skip local file URLs
-			if (!settings.convert_urls || (elm && elm.nodeName == 'LINK') || url.indexOf('file:') === 0 || url.length === 0) {
-				return url;
+			if (!settings.convert_urls || decodeURIComponent(url).indexOf("{") === 0 || (elm && elm.nodeName == 'LINK') || url.test(/^(\/\/|\#|aim\:|msnim\:|xmpp\:|ymsgr\:|magnet\:|gg\:|skype\:|mailto\:|javascript\:|callto\:|tel\:)/) || url.length === 0) {
+				return url.replace(/([^:])\/\//, '$1/');
 			}
 
 			// Convert to relative
 			if (settings.relative_urls) {
-				return self.documentBaseURI.toRelative(url);
+				url = self.documentBaseURI.toRelative(url).replace(/([^:])\/\//, '$1/');
+				return (url.test(/^(f|ht)tp(s?)\:\/\//) ? url : "/" + url.replace(/^\/+/,''));
 			}
 
 			// Convert to absolute
 			url = self.documentBaseURI.toAbsolute(url, settings.remove_script_host);
 
-			return url;
+			return url.replace(/([^:])\/\//, '$1/');
 		},
 
 		/**

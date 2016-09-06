@@ -287,6 +287,12 @@ define("tinymce/html/Schema", [
 
 		// Special: iframe, ruby, video, audio, label
 
+		// Shoper: additional allowed attributes
+		addAttrs("audio video embed img object", "onabort oncanplay oncanplaythrough ondurationchange onemptied onended onerror onloadeddata onloadedmetadata onloadstart onpause onplay onplaying onprogress onratechange onreadystatechange onseeked onseeking onstalled onsuspend ontimeupdate onvolumechange onwaiting");
+		addAttrs("input button", "onblur onchange oncontextmenu onfocus onformchange onforminput oninput oninvalid onreset onselect onsubmit");
+		addAttrs("a", "onkeydown onkeypress onkeyup onclick ondblclick ondrag ondragend ondragenter ondragleave ondragover ondragstart ondrop onmousedown onmousemove onmouseout onmouseover onmouseup onmousewheel onscroll");
+		addAttrs("body", "script style");
+
 		// Delete children of the same name from it's parent
 		// For example: form can't have a child of the name form
 		each(split('a form meter progress dfn'), function(name) {

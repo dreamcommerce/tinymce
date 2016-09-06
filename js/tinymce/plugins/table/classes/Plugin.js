@@ -29,7 +29,8 @@ define("tinymce/tableplugin/Plugin", [
 		var winMan, clipboardRows, self = this; // Might be selected cells on reload
 
 		function removePxSuffix(size) {
-			return size ? size.replace(/px$/, '') : "";
+			//return size ? size.replace(/([0-9]*) px$/, '') : "";
+			return size ? parseInt(size) : "";
 		}
 
 		function addSizeSuffix(size) {
@@ -45,26 +46,42 @@ define("tinymce/tableplugin/Plugin", [
 				editor.formatter.remove('align' + name, {}, elm);
 			});
 		}
-		
-		function unApplyVAlign(elm) {
+
+		function unApplyVerticalAlign(elm) {
 			each('top middle bottom'.split(' '), function(name) {
 				editor.formatter.remove('valign' + name, {}, elm);
 			});
-		}			
+		}
 
 		function tableDialog() {
-			var dom = editor.dom, tableElm, colsCtrl, rowsCtrl, data;
+			var dom = editor.dom, tableElm, data;
 
 			tableElm = dom.getParent(editor.selection.getStart(), 'table');
 
 			data = {
+				bgcolor: dom.getStyle(tableElm, 'backgroundColor'),
+				bordercolor: dom.getStyle(tableElm, 'borderColor'),
+				bgimage: dom.getStyle(tableElm, 'backgroundImage'),
+				id: dom.getAttrib(tableElm, 'id'),
+				style: dom.getAttrib(tableElm, 'style').split('; ').join(';\r\n'),
 				width: removePxSuffix(dom.getStyle(tableElm, 'width') || dom.getAttrib(tableElm, 'width')),
 				height: removePxSuffix(dom.getStyle(tableElm, 'height') || dom.getAttrib(tableElm, 'height')),
-				cellspacing: tableElm ? dom.getAttrib(tableElm, 'cellspacing') : '',
-				cellpadding: tableElm ? dom.getAttrib(tableElm, 'cellpadding') : '',
-				border: tableElm ? dom.getAttrib(tableElm, 'border') : '',
+				cellspacing: dom.getAttrib(tableElm, 'cellspacing'),
+				cellpadding: dom.getAttrib(tableElm, 'cellpadding'),
+				border: removePxSuffix(dom.getStyle(tableElm, 'border') || dom.getAttrib(tableElm, 'border')),
 				caption: !!dom.select('caption', tableElm)[0]
 			};
+
+			if(data.bgimage === 'initial') {
+				data.bgimage = '';
+			} else {
+				var imgParts = /url\(\'?(.*)\'?\)/.exec(data.bgimage);
+				if(imgParts !== null) {
+					data.bgimage = imgParts[1];
+				} else {
+					data.bgimage = '';
+				}
+			}
 
 			each('left center right'.split(' '), function(name) {
 				if (editor.formatter.matchNode(tableElm, 'align' + name)) {
@@ -72,25 +89,18 @@ define("tinymce/tableplugin/Plugin", [
 				}
 			});
 
-			if (!tableElm) {
-				colsCtrl = {label: 'Cols', name: 'cols'};
-				rowsCtrl = {label: 'Rows', name: 'rows'};
-			}
-
 			editor.windowManager.open({
 				title: "Table properties",
 				items: {
 					type: 'form',
-					layout: 'grid',
-					columns: 2,
 					data: data,
 					defaults: {
 						type: 'textbox',
 						maxWidth: 50
 					},
 					items: [
-						colsCtrl,
-						rowsCtrl,
+						{label: 'Id', name: 'id', maxWidth: 200},
+						{label: 'Styles', name: 'style', maxWidth: 200, minHeight: 100, multiline: true},
 						{label: 'Width', name: 'width'},
 						{label: 'Height', name: 'height'},
 						{label: 'Cell spacing', name: 'cellspacing'},
@@ -99,18 +109,20 @@ define("tinymce/tableplugin/Plugin", [
 						{label: 'Caption', name: 'caption', type: 'checkbox'},
 						{
 							label: 'Alignment',
-							minWidth: 90,
+							maxWidth: 90,
 							name: 'align',
 							type: 'listbox',
 							text: 'None',
-							maxWidth: null,
 							values: [
 								{text: 'None', value: ''},
 								{text: 'Left', value: 'left'},
 								{text: 'Center', value: 'center'},
 								{text: 'Right', value: 'right'}
 							]
-						}
+						},
+						{label: 'Border color', name: 'bordercolor', type: 'colorpicker'},
+						{label: 'Background color', name: 'bgcolor', type: 'colorpicker'},
+						{label: 'Background image', name: 'bgimage', type: 'moxie', maxWidth: 200}
 					]
 				},
 
@@ -118,20 +130,40 @@ define("tinymce/tableplugin/Plugin", [
 					var data = this.toJSON(), captionElm;
 
 					editor.undoManager.transact(function() {
-						if (!tableElm) {
-							tableElm = insertTable(data.cols || 1, data.rows || 1);
-						}
-
 						editor.dom.setAttribs(tableElm, {
 							cellspacing: data.cellspacing,
 							cellpadding: data.cellpadding,
-							border: data.border
+							style: data.style,
+							id: data.id
 						});
 
 						editor.dom.setStyles(tableElm, {
 							width: addSizeSuffix(data.width),
 							height: addSizeSuffix(data.height)
 						});
+
+						if(data.bgimage) {
+							editor.dom.setStyle(tableElm, 'background', 'url("' + data.bgimage + '")');
+						} else {
+							editor.dom.setStyle(tableElm, 'background', data.bgcolor);
+						}
+
+						var borderwidth;
+						if (data.border) {
+							borderwidth = parseInt(removePxSuffix(data.border), 10);
+						}
+
+						if (borderwidth > 0) {
+							editor.dom.setStyles(tableElm, {
+								border: addSizeSuffix(borderwidth) + ' solid ' +
+								(data.bordercolor || '#000')
+							});
+						}
+						else {
+							editor.dom.setStyles(tableElm, {
+								border: ''
+							});
+						}
 
 						// Toggle caption on/off
 						captionElm = dom.select('caption', tableElm)[0];
@@ -193,10 +225,27 @@ define("tinymce/tableplugin/Plugin", [
 			}
 
 			data = {
+				id: dom.getAttrib(cellElm, 'id'),
+				style: dom.getAttrib(cellElm, 'style').split('; ').join(';\r\n'),
+				bgcolor: dom.getStyle(cellElm, 'backgroundColor'),
+				bordercolor: dom.getStyle(cellElm, 'borderColor'),
+				bgimage: dom.getStyle(cellElm, 'backgroundImage'),
 				width: removePxSuffix(dom.getStyle(cellElm, 'width') || dom.getAttrib(cellElm, 'width')),
 				height: removePxSuffix(dom.getStyle(cellElm, 'height') || dom.getAttrib(cellElm, 'height')),
-				scope: dom.getAttrib(cellElm, 'scope')
+				scope: dom.getAttrib(cellElm, 'scope'),
+				border: removePxSuffix(dom.getStyle(cellElm, 'border') || dom.getAttrib(cellElm, 'border'))
 			};
+
+			if(data.bgimage === 'initial') {
+				data.bgimage = '';
+			} else {
+				var imgParts = /url\(\'?(.*)\'?\)/.exec(data.bgimage);
+				if(imgParts !== null) {
+					data.bgimage = imgParts[1];
+				} else {
+					data.bgimage = '';
+				}
+			}
 
 			data.type = cellElm.nodeName.toLowerCase();
 
@@ -208,7 +257,7 @@ define("tinymce/tableplugin/Plugin", [
 
 			each('top middle bottom'.split(' '), function(name) {
 				if (editor.formatter.matchNode(cellElm, 'valign' + name)) {
-					data.valign = name;
+					data.verticalalign = name;
 				}
 			});
 
@@ -217,13 +266,13 @@ define("tinymce/tableplugin/Plugin", [
 				items: {
 					type: 'form',
 					data: data,
-					layout: 'grid',
-					columns: 2,
 					defaults: {
 						type: 'textbox',
 						maxWidth: 50
 					},
 					items: [
+						{label: 'Id', name: 'id', maxWidth: 200},
+						{label: 'Styles', name: 'style', maxWidth: 200, minHeight: 100, multiline: true},
 						{label: 'Width', name: 'width'},
 						{label: 'Height', name: 'height'},
 						{
@@ -231,8 +280,7 @@ define("tinymce/tableplugin/Plugin", [
 							name: 'type',
 							type: 'listbox',
 							text: 'None',
-							minWidth: 90,
-							maxWidth: null,
+							maxWidth: 90,
 							values: [
 								{text: 'Cell', value: 'td'},
 								{text: 'Header cell', value: 'th'}
@@ -243,8 +291,7 @@ define("tinymce/tableplugin/Plugin", [
 							name: 'scope',
 							type: 'listbox',
 							text: 'None',
-							minWidth: 90,
-							maxWidth: null,
+							maxWidth: 90,
 							values: [
 								{text: 'None', value: ''},
 								{text: 'Row', value: 'row'},
@@ -253,13 +300,13 @@ define("tinymce/tableplugin/Plugin", [
 								{text: 'Column group', value: 'colgroup'}
 							]
 						},
+						{label: 'Border', name: 'border'},
 						{
-							label: 'H Align',
+							label: 'Alignment',
 							name: 'align',
 							type: 'listbox',
 							text: 'None',
-							minWidth: 90,
-							maxWidth: null,
+							maxWidth: 90,
 							values: [
 								{text: 'None', value: ''},
 								{text: 'Left', value: 'left'},
@@ -268,19 +315,21 @@ define("tinymce/tableplugin/Plugin", [
 							]
 						},
 						{
-							label: 'V Align',
-							name: 'valign',
+							label: 'Vertical alignment',
+							maxWidth: 90,
+							name: 'verticalalign',
 							type: 'listbox',
 							text: 'None',
-							minWidth: 90,
-							maxWidth: null,
 							values: [
 								{text: 'None', value: ''},
 								{text: 'Top', value: 'top'},
 								{text: 'Middle', value: 'middle'},
 								{text: 'Bottom', value: 'bottom'}
 							]
-						}
+						},
+						{label: 'Border color', name: 'bordercolor', type: 'colorpicker'},
+						{label: 'Background color', name: 'bgcolor', type: 'colorpicker'},
+						{label: 'Background image', name: 'bgimage', type: 'moxie', maxWidth: 200}
 					]
 				},
 
@@ -289,12 +338,38 @@ define("tinymce/tableplugin/Plugin", [
 
 					editor.undoManager.transact(function() {
 						each(cells, function(cellElm) {
-							editor.dom.setAttrib(cellElm, 'scope', data.scope);
+							editor.dom.setAttribs(cellElm, {
+								scope : data.scope,
+								style: data.style,
+								id: data.id
+							});
 
 							editor.dom.setStyles(cellElm, {
 								width: addSizeSuffix(data.width),
 								height: addSizeSuffix(data.height)
 							});
+
+							if(data.bgimage) {
+								editor.dom.setStyle(cellElm, 'background', "url('" + data.bgimage + "')");
+							} else {
+								editor.dom.setStyle(cellElm, 'background', data.bgcolor);
+							}
+
+							var borderwidth;
+							if (data.border) {
+								borderwidth = parseInt(removePxSuffix(data.border), 10);
+							}
+							if (borderwidth > 0) {
+								editor.dom.setStyles(cellElm, {
+									border: addSizeSuffix(borderwidth) + ' solid ' +
+									(data.bordercolor || '#000')
+								});
+							}
+							else {
+								editor.dom.setStyles(cellElm, {
+									border: ''
+								});
+							}
 
 							// Switch cell type
 							if (data.type && cellElm.nodeName.toLowerCase() != data.type) {
@@ -307,12 +382,10 @@ define("tinymce/tableplugin/Plugin", [
 								editor.formatter.apply('align' + data.align, {}, cellElm);
 							}
 
-							// Apply/remove vertical alignment
-							unApplyVAlign(cellElm);
-							if (data.valign) {
-								editor.formatter.apply('valign' + data.valign, {}, cellElm);
-							}								
-							
+							unApplyVerticalAlign(cellElm);
+							if(data.verticalalign) {
+								editor.formatter.apply('valign' + data.verticalalign, {}, cellElm);
+							}
 						});
 
 						editor.focus();
@@ -343,7 +416,11 @@ define("tinymce/tableplugin/Plugin", [
 			}
 
 			data = {
+				id: dom.getAttrib(rowElm, 'id'),
+				style: dom.getAttrib(rowElm, 'style').split('; ').join(';\r\n'),
 				height: removePxSuffix(dom.getStyle(rowElm, 'height') || dom.getAttrib(rowElm, 'height')),
+				bordercolor: dom.getStyle(rowElm, 'borderColor'),
+				border: removePxSuffix(dom.getStyle(rowElm, 'border') || dom.getAttrib(rowElm, 'border')),
 				scope: dom.getAttrib(rowElm, 'scope')
 			};
 
@@ -362,27 +439,31 @@ define("tinymce/tableplugin/Plugin", [
 					data: data,
 					columns: 2,
 					defaults: {
-						type: 'textbox'
+						type: 'textbox',
+						maxWidth: 50
 					},
 					items: [
+						{label: 'Id', name: 'id', maxWidth: 200},
+						{label: 'Styles', name: 'style', maxWidth: 200, minHeight: 100, multiline: true},
 						{
 							type: 'listbox',
 							name: 'type',
 							label: 'Row type',
 							text: 'None',
-							maxWidth: null,
+							maxWidth: 90,
 							values: [
 								{text: 'Header', value: 'thead'},
 								{text: 'Body', value: 'tbody'},
 								{text: 'Footer', value: 'tfoot'}
 							]
 						},
+						{label: 'Border', name: 'border'},
 						{
 							type: 'listbox',
 							name: 'align',
 							label: 'Alignment',
 							text: 'None',
-							maxWidth: null,
+							maxWidth: 90,
 							values: [
 								{text: 'None', value: ''},
 								{text: 'Left', value: 'left'},
@@ -390,7 +471,10 @@ define("tinymce/tableplugin/Plugin", [
 								{text: 'Right', value: 'right'}
 							]
 						},
-						{label: 'Height', name: 'height'}
+						{label: 'Height', name: 'height'},
+						{label: 'Border color', name: 'bordercolor', type: 'colorpicker'},
+						{label: 'Background color', name: 'bgcolor', type: 'colorpicker'},
+						{label: 'Background image', name: 'bgimage', type: 'moxie', maxWidth: 200}
 					]
 				},
 
@@ -401,11 +485,37 @@ define("tinymce/tableplugin/Plugin", [
 						var toType = data.type;
 
 						each(rows, function(rowElm) {
-							editor.dom.setAttrib(rowElm, 'scope', data.scope);
+							editor.dom.setAttribs(rowElm, {
+								scope: data.scope,
+								style: data.style,
+								id: data.id
+							});
 
 							editor.dom.setStyles(rowElm, {
 								height: addSizeSuffix(data.height)
 							});
+
+							if(data.bgimage) {
+								editor.dom.setStyle(rowElm, 'background', 'url("' + data.bgimage + '")');
+							} else {
+								editor.dom.setStyle(rowElm, 'background', data.bgcolor);
+							}
+
+							var borderwidth;
+							if (data.border) {
+								borderwidth = parseInt(removePxSuffix(data.border), 10);
+							}
+							if (borderwidth > 0) {
+								editor.dom.setStyles(rowElm, {
+									border: addSizeSuffix(borderwidth) + ' solid ' +
+									(data.bordercolor || '#000')
+								});
+							}
+							else {
+								editor.dom.setStyles(rowElm, {
+									border: ''
+								});
+							}
 
 							if (toType != rowElm.parentNode.nodeName.toLowerCase()) {
 								tableElm = dom.getParent(rowElm, 'table');
@@ -450,7 +560,7 @@ define("tinymce/tableplugin/Plugin", [
 		function insertTable(cols, rows) {
 			var y, x, html;
 
-			html = '<table id="__mce"><tbody>';
+			html = '<table><tbody>';
 
 			for (y = 0; y < rows; y++) {
 				html += '<tr>';
@@ -465,11 +575,6 @@ define("tinymce/tableplugin/Plugin", [
 			html += '</tbody></table>';
 
 			editor.insertContent(html);
-
-			var tableElm = editor.dom.get('__mce');
-			editor.dom.setAttrib(tableElm, 'id', null);
-
-			return tableElm;
 		}
 
 		function handleDisabledState(ctrl, selector) {
@@ -508,7 +613,8 @@ define("tinymce/tableplugin/Plugin", [
 
 				for (var x = 0; x < 10; x++) {
 					html += '<td role="gridcell" tabindex="-1"><a id="mcegrid' + (y * 10 + x) + '" href="#" ' +
-						'data-mce-x="' + x + '" data-mce-y="' + y + '"></a></td>';
+						'data-mce-x="' + x + '" data-mce-y="' + y + '" ' +
+						'' + (x + y === 0 ? ' class="mce-active"' : '') + '></a></td>';
 				}
 
 				html += '</tr>';
@@ -523,148 +629,143 @@ define("tinymce/tableplugin/Plugin", [
 
 		function selectGrid(tx, ty, control) {
 			var table = control.getEl().getElementsByTagName('table')[0];
-			var x, y, focusCell, cell, active;
-			var rtl = control.isRtl() || control.parent().rel == 'tl-tr';
+			var rel = control.parent().rel, x, y, focusCell, cell;
 
-			table.nextSibling.innerHTML = (tx + 1) + ' x ' + (ty + 1);
+			if (control.isRtl() || rel == 'tl-tr') {
+				for (y = 9; y >= 0; y--) {
+					for (x = 0; x < 10; x++) {
+						cell = table.rows[y].childNodes[x].firstChild;
 
-			if (rtl) {
-				tx = 9 - tx;
-			}
+						editor.dom.toggleClass(
+							cell,
+							'mce-active',
+							x >= tx && y <= ty
+						);
 
-			for (y = 0; y < 10; y++) {
-				for (x = 0; x < 10; x++) {
-					cell = table.rows[y].childNodes[x].firstChild;
-					active = (rtl ? x >= tx : x <= tx) && y <= ty;
-
-					editor.dom.toggleClass(cell, 'mce-active', active);
-
-					if (active) {
-						focusCell = cell;
+						if (x >= tx && y <= ty) {
+							focusCell = cell;
+						}
 					}
 				}
+
+				tx = 9 - tx;
+				table.nextSibling.innerHTML = tx + ' x ' + (ty + 1);
+			} else {
+				for (y = 0; y < 10; y++) {
+					for (x = 0; x < 10; x++) {
+						cell = table.rows[y].childNodes[x].firstChild;
+
+						editor.dom.toggleClass(
+							cell,
+							'mce-active',
+							x <= tx && y <= ty
+						);
+
+						if (x <= tx && y <= ty) {
+							focusCell = cell;
+						}
+					}
+				}
+
+				table.nextSibling.innerHTML = (tx + 1) + ' x ' + (ty + 1);
 			}
 
 			return focusCell.parentNode;
 		}
 
-		if (editor.settings.table_grid === false) {
-			editor.addMenuItem('inserttable', {
-				text: 'Insert table',
-				icon: 'table',
-				context: 'table',
-				onclick: tableDialog
-			});
-		} else {
-			editor.addMenuItem('inserttable', {
-				text: 'Insert table',
-				icon: 'table',
-				context: 'table',
-				ariaHideMenu: true,
-				onclick: function(e) {
-					if (e.aria) {
-						this.parent().hideAll();
-						e.stopImmediatePropagation();
-						tableDialog();
-					}
-				},
-				onshow: function() {
-					selectGrid(0, 0, this.menu.items()[0]);
-				},
-				onhide: function() {
-					var elements = this.menu.items()[0].getEl().getElementsByTagName('a');
-					editor.dom.removeClass(elements, 'mce-active');
-					editor.dom.addClass(elements[0], 'mce-active');
-				},
-				menu: [
-					{
-						type: 'container',
-						html: generateTableGrid(),
+		editor.addMenuItem('inserttable', {
+			text: 'Insert table',
+			icon: 'table',
+			context: 'table',
+			onhide: function() {
+				var elements = this.menu.items()[0].getEl().getElementsByTagName('a');
+				editor.dom.removeClass(elements, 'mce-active');
+				editor.dom.addClass(elements[0], 'mce-active');
+			},
+			menu: [
+				{
+					type: 'container',
+					html: generateTableGrid(),
 
-						onPostRender: function() {
-							this.lastX = this.lastY = 0;
-						},
+					onPostRender: function() {
+						this.lastX = this.lastY = 0;
+					},
 
-						onmousemove: function(e) {
-							var target = e.target, x, y;
+					onmousemove: function(e) {
+						var target = e.target, x, y;
 
-							if (target.tagName.toUpperCase() == 'A') {
-								x = parseInt(target.getAttribute('data-mce-x'), 10);
-								y = parseInt(target.getAttribute('data-mce-y'), 10);
+						if (target.nodeName == 'A') {
+							x = parseInt(target.getAttribute('data-mce-x'), 10);
+							y = parseInt(target.getAttribute('data-mce-y'), 10);
 
-								if (this.isRtl() || this.parent().rel == 'tl-tr') {
-									x = 9 - x;
-								}
-
-								if (x !== this.lastX || y !== this.lastY) {
-									selectGrid(x, y, e.control);
-
-									this.lastX = x;
-									this.lastY = y;
-								}
-							}
-						},
-
-						onkeydown: function(e) {
-							var x = this.lastX, y = this.lastY, isHandled;
-
-							switch (e.keyCode) {
-								case 37: // DOM_VK_LEFT
-									if (x > 0) {
-										x--;
-										isHandled = true;
-									}
-									break;
-
-								case 39: // DOM_VK_RIGHT
-									isHandled = true;
-
-									if (x < 9) {
-										x++;
-									}
-									break;
-
-								case 38: // DOM_VK_UP
-									isHandled = true;
-
-									if (y > 0) {
-										y--;
-									}
-									break;
-
-								case 40: // DOM_VK_DOWN
-									isHandled = true;
-
-									if (y < 9) {
-										y++;
-									}
-									break;
-							}
-
-							if (isHandled) {
-								e.preventDefault();
-								e.stopPropagation();
-
-								selectGrid(x, y, e.control).focus();
+							if (x !== this.lastX || y !== this.lastY) {
+								selectGrid(x, y, e.control);
 
 								this.lastX = x;
 								this.lastY = y;
 							}
-						},
+						}
+					},
 
-						onclick: function(e) {
-							if (e.target.tagName.toUpperCase() == 'A') {
-								e.preventDefault();
-								e.stopPropagation();
-								this.parent().cancel();
+					onkeydown: function(e) {
+						var x = this.lastX, y = this.lastY, isHandled;
 
-								insertTable(this.lastX + 1, this.lastY + 1);
-							}
+						switch (e.keyCode) {
+							case 37: // DOM_VK_LEFT
+								if (x > 0) {
+									x--;
+									isHandled = true;
+								}
+								break;
+
+							case 39: // DOM_VK_RIGHT
+								isHandled = true;
+
+								if (x < 9) {
+									x++;
+								}
+								break;
+
+							case 38: // DOM_VK_UP
+								isHandled = true;
+
+								if (y > 0) {
+									y--;
+								}
+								break;
+
+							case 40: // DOM_VK_DOWN
+								isHandled = true;
+
+								if (y < 9) {
+									y++;
+								}
+								break;
+						}
+
+						if (isHandled) {
+							e.preventDefault();
+							e.stopPropagation();
+
+							selectGrid(x, y, e.control).focus();
+
+							this.lastX = x;
+							this.lastY = y;
+						}
+					},
+
+					onclick: function(e) {
+						if (e.target.nodeName == 'A') {
+							e.preventDefault();
+							e.stopPropagation();
+							this.parent().cancel();
+
+							insertTable(this.lastX + 1, this.lastY + 1);
 						}
 					}
-				]
-			});
-		}
+				}
+			]
+		});
 
 		editor.addMenuItem('tableprops', {
 			text: 'Table properties',
